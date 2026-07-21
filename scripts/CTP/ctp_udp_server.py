@@ -38,9 +38,15 @@ def main():
     ap.add_argument("--secret", required=True,
                      help="Shared passphrase -- MUST match the client's --secret. "
                           "Demo-only stand-in for CTP's real KEM handshake.")
-    ap.add_argument("--viz-stride", type=int, default=4,
-                     help="Subsampling stride for the displayed point cloud "
+    ap.add_argument("--block-size", type=int, default=4,
+                     help="Cluster cells into block_size^3 blocks for display "
                           "(the real lattice used for crypto is always full resolution)")
+    ap.add_argument("--activity-threshold", type=float, default=0.6,
+                     help="Only draw a block if its active-cell fraction exceeds this "
+                          "(0-1). At the lattice's normal ~50%% density, a block being "
+                          "fully empty is essentially impossible, so a plain nonzero "
+                          "rule would draw every block solid; this picks out the "
+                          "above-baseline ones instead.")
     ap.add_argument("--evolve-every", type=int, default=1,
                      help="How often the lattice evolves, in packets. 1 = every "
                           "packet, for a visually responsive demo (CTP's default "
@@ -124,7 +130,8 @@ def main():
     threading.Thread(target=network_thread, daemon=True).start()
     threading.Thread(target=console_thread, daemon=True).start()
 
-    viz = TorusVisualizer("CTP server -- local send-side torus", viz_stride=args.viz_stride)
+    viz = TorusVisualizer("CTP server -- local send-side torus", block_size=args.block_size,
+                          activity_threshold=args.activity_threshold)
     from matplotlib.animation import FuncAnimation
 
     def update(_frame):
@@ -133,6 +140,12 @@ def main():
         viz.render(grid, text)
         return []
 
+    # 150ms, not 600ms: the visualizer now only rebuilds voxel geometry
+    # (~400ms) when the lattice actually changed since the last frame --
+    # most frames are pure rotation on unchanged data (~110-120ms,
+    # measured directly), so the interval can target that common case
+    # instead of the occasional expensive one. A frame right after a sent
+    # or received message will still take longer; that's fine; it's rare.
     anim = FuncAnimation(viz.fig, update, interval=150, cache_frame_data=False)
     viz.plt.show()
 

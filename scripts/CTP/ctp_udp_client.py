@@ -35,7 +35,12 @@ def main():
     ap.add_argument("--port", type=int, default=9999)
     ap.add_argument("--secret", required=True,
                      help="Shared passphrase -- MUST match the server's --secret.")
-    ap.add_argument("--viz-stride", type=int, default=4)
+    ap.add_argument("--block-size", type=int, default=4,
+                     help="Cluster cells into block_size^3 blocks for display "
+                          "(the real lattice used for crypto is always full resolution)")
+    ap.add_argument("--activity-threshold", type=float, default=0.6,
+                     help="Only draw a block if its active-cell fraction exceeds this "
+                          "(0-1). See ctp_udp_server.py for why the default isn't 0.")
     ap.add_argument("--evolve-every", type=int, default=1)
     ap.add_argument("--burn-in", type=int, default=8)
     ap.add_argument("--handshake-retries", type=int, default=10)
@@ -120,7 +125,8 @@ def main():
     threading.Thread(target=network_thread, daemon=True).start()
     threading.Thread(target=console_thread, daemon=True).start()
 
-    viz = TorusVisualizer("CTP client -- local send-side torus", viz_stride=args.viz_stride)
+    viz = TorusVisualizer("CTP client -- local send-side torus", block_size=args.block_size,
+                          activity_threshold=args.activity_threshold)
     from matplotlib.animation import FuncAnimation
 
     def update(_frame):
@@ -129,6 +135,12 @@ def main():
         viz.render(grid, text)
         return []
 
+    # 150ms, not 600ms: the visualizer now only rebuilds voxel geometry
+    # (~400ms) when the lattice actually changed since the last frame --
+    # most frames are pure rotation on unchanged data (~110-120ms,
+    # measured directly), so the interval can target that common case
+    # instead of the occasional expensive one. A frame right after a sent
+    # or received message will still take longer; that's fine; it's rare.
     anim = FuncAnimation(viz.fig, update, interval=150, cache_frame_data=False)
     viz.plt.show()
 
